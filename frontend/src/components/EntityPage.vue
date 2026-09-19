@@ -7,6 +7,7 @@ import StatusBadge from './common/StatusBadge.vue';
 import MetricCard from './common/MetricCard.vue';
 import ConfirmDialog from './common/ConfirmDialog.vue';
 import EmptyState from './common/EmptyState.vue';
+import GateSnapshotCard from './common/GateSnapshotCard.vue';
 
 const props = defineProps<{ config: EntityConfig; store: any }>();
 const { session } = useAuth();
@@ -73,6 +74,9 @@ async function confirmTransition() {
         <el-table-column prop="code" label="编码" width="150"/>
         <el-table-column label="名称" min-width="180"><template #default="{ row }"><strong>{{ row.name }}</strong><small>{{ row.facility }}</small></template></el-table-column>
         <el-table-column label="状态" width="140"><template #default="{ row }"><StatusBadge :status="row.status"/></template></el-table-column>
+        <el-table-column v-if="config.path === 'approvals'" label="检测快照门禁" width="260">
+          <template #default="{ row }"><GateSnapshotCard :record="row" compact/></template>
+        </el-table-column>
         <el-table-column prop="riskLevel" label="风险" width="90"/>
         <el-table-column prop="owner" label="责任人"/>
         <el-table-column label="指标"><template #default="{ row }">{{ row.metricValue }} {{ row.metricUnit }}</template></el-table-column>
@@ -81,7 +85,9 @@ async function confirmTransition() {
           <template #default="{ row }">
             <el-button v-if="canTransition(row)" link type="primary" @click="pending = { item: row, status: nextStatus(row.status, config.statuses)! }">推进至 {{ nextStatus(row.status, config.statuses) }}</el-button>
             <span v-else-if="!canWrite" class="muted">只读权限</span>
-            <span v-else-if="config.path === 'approvals' && row.status === 'review'" class="muted">等待复核员审批</span>
+            <span v-else-if="config.path === 'approvals' && row.status === 'review'" class="muted">
+              {{ canReview ? (row.gateLiveVerdict && row.gateLiveVerdict !== 'ready' ? '门禁未通过' : '等待复核员审批') : '等待复核员审批' }}
+            </span>
             <span v-else class="muted">流程结束</span>
           </template>
         </el-table-column>

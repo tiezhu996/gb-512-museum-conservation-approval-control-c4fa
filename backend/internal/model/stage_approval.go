@@ -17,6 +17,39 @@ type StageApproval struct {
 	Evidence    string            `json:"evidence" gorm:"size:2000"`
 	RelatedCode string            `json:"relatedCode" gorm:"size:64;index"`
 	Opinions    []ApprovalOpinion `json:"opinions" gorm:"foreignKey:StageApprovalID;constraint:OnDelete:CASCADE"`
+
+	// 检测快照门禁字段：审批由 draft 进入 review 的瞬间写入，此后冻结。
+	// GatePlanCode 冗余关联的处理方案编码，GateTestCode/GateTestVersion/GateTestStatus
+	// 记录当时“按更新时间最新的已核验材料检测”，GateVerdict 保存冻结结论。
+	GatePlanCode    string    `json:"gatePlanCode" gorm:"size:64;index"`
+	GateTestCode    string    `json:"gateTestCode" gorm:"size:64;index"`
+	GateTestName    string    `json:"gateTestName" gorm:"size:160"`
+	GateTestVersion uint      `json:"gateTestVersion"`
+	GateTestStatus  string    `json:"gateTestStatus" gorm:"size:40"`
+	GateTestUpdated time.Time `json:"gateTestUpdatedAt"`
+	GateFrozenAt    time.Time `json:"gateFrozenAt"`
+	GateVerdict     string    `json:"gateVerdict" gorm:"size:32;index"`
+
+	// 以下字段不入库，由 service 在读路径上按快照与检测现状实时计算，
+	// 供审批列表与方案页展示“门禁现在是否仍然放行”。
+	GateLiveVerdict string `json:"gateLiveVerdict,omitempty" gorm:"-"`
+	GateLiveReason  string `json:"gateLiveReason,omitempty" gorm:"-"`
+}
+
+// HasGateSnapshot 判断审批是否携带可用于批准校验的冻结快照。
+func (item *StageApproval) HasGateSnapshot() bool {
+	return item.GateTestCode != "" && item.GateVerdict != ""
+}
+
+// GateSnapshot 是冻结时刻的不可变检测坐标，service 用它与现状做比对。
+type GateSnapshot struct {
+	PlanCode    string
+	TestCode    string
+	TestName    string
+	TestVersion uint
+	TestStatus  string
+	TestUpdated time.Time
+	FrozenAt    time.Time
 }
 
 func (item *StageApproval) GetBase() *BaseModel { return &item.BaseModel }

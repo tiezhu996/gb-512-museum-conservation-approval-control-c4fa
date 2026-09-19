@@ -25,18 +25,31 @@ type StageApprovalService interface {
 type stageApprovalService struct {
 	repository repository.StageApprovalRepository
 	security   SecurityService
+	gate       ApprovalGateService
 }
 
-func NewStageApprovalService(repo repository.StageApprovalRepository, security SecurityService) StageApprovalService {
-	return &stageApprovalService{repository: repo, security: security}
+func NewStageApprovalService(repo repository.StageApprovalRepository, security SecurityService, gate ApprovalGateService) StageApprovalService {
+	return &stageApprovalService{repository: repo, security: security, gate: gate}
 }
 
 func (s *stageApprovalService) List(ctx context.Context, query dto.PageQuery) (repository.Page[model.StageApproval], error) {
-	return s.repository.List(ctx, query)
+	page, err := s.repository.List(ctx, query)
+	if err != nil {
+		return page, err
+	}
+	page.Items = s.gate.Hydrate(ctx, page.Items)
+	return page, nil
 }
 
 func (s *stageApprovalService) Get(ctx context.Context, id uint) (model.StageApproval, error) {
-	return s.repository.Get(ctx, id)
+	item, err := s.repository.Get(ctx, id)
+	if err != nil {
+		return model.StageApproval{}, err
+	}
+	live := s.gate.EvaluateLive(ctx, item)
+	item.GateLiveVerdict = live.Verdict
+	item.GateLiveReason = live.Reason
+	return item, nil
 }
 
 func (s *stageApprovalService) Create(ctx context.Context, input dto.CreateStageApproval, actor, requestID string) (model.StageApproval, error) {
@@ -105,21 +118,54 @@ func (s *stageApprovalService) Transition(ctx context.Context, id uint, input dt
 		role != model.RoleReviewer && role != model.RoleAdmin {
 		return model.StageApproval{}, ErrReviewerRequired
 	}
+	frozenAt := time.Now().UTC()
+	// 检测快照门禁：进入待复核时冻结“按更新时间最新的已核验材料检测”；
+	// 缺方案或无有效检测时直接拒绝，状态、版本与意见保持不变（不写库）。
+	if target == string(constants.ApprovalStateReview) {
+		snapshot, err := s.gate.FreezeForReview(ctx, &current, frozenAt)
+		if err != nil {
+			return model.StageApproval{}, err
+		}
+		applyGateSnapshot(&current, snapshot)
+	}
+	// 批准时必须仍能读到冻结检测、版本未变且状态仍为已核验；
+	// 检测改判/换版/删除都会保持 review 并返回具体原因（不写库、不追加意见）。
+	if target == string(constants.ApprovalStateApproved) {
+		if err := s.gate.VerifyForApprove(ctx, &current); err != nil {
+			return model.StageApproval{}, err
+		}
+	}
 	before := current.Status
 	current.Status = target
 	current.Version = input.ExpectedVersion + 1
-	current.UpdatedAt = time.Now().UTC()
+	current.UpdatedAt = frozenAt
 	opinion := &model.ApprovalOpinion{
 		Version: input.ExpectedVersion + 1, Status: target, Opinion: strings.TrimSpace(input.Reason),
-		Actor: actor, RequestID: requestID, CreatedAt: current.UpdatedAt,
+		Actor: actor, RequestID: requestID, CreatedAt: frozenAt,
 	}
 	if err := s.repository.TransitionWithOpinion(ctx, id, input.ExpectedVersion, &current, opinion); err != nil {
 		return model.StageApproval{}, fmt.Errorf("transition 阶段审批: %w", err)
 	}
-	if err := s.security.Audit(ctx, actor, requestID, "transition", "StageApproval", id, before, target, input.Reason); err != nil {
+	auditDetail := input.Reason
+	if target == string(constants.ApprovalStateReview) && current.HasGateSnapshot() {
+		auditDetail = fmt.Sprintf("%s | 门禁冻结检测 %s v%d（状态 %s）", input.Reason, current.GateTestCode, current.GateTestVersion, current.GateTestStatus)
+	}
+	if err := s.security.Audit(ctx, actor, requestID, "transition", "StageApproval", id, before, target, auditDetail); err != nil {
 		return model.StageApproval{}, fmt.Errorf("persist transition audit: %w", err)
 	}
-	return s.repository.Get(ctx, id)
+	return s.Get(ctx, id)
+}
+
+// applyGateSnapshot 把冻结快照落到审批聚合的门禁字段，随乐观锁更新一并持久化。
+func applyGateSnapshot(approval *model.StageApproval, snapshot model.GateSnapshot) {
+	approval.GatePlanCode = snapshot.PlanCode
+	approval.GateTestCode = snapshot.TestCode
+	approval.GateTestName = snapshot.TestName
+	approval.GateTestVersion = snapshot.TestVersion
+	approval.GateTestStatus = snapshot.TestStatus
+	approval.GateTestUpdated = snapshot.TestUpdated
+	approval.GateFrozenAt = snapshot.FrozenAt
+	approval.GateVerdict = constants.GateVerdictReady
 }
 
 func (s *stageApprovalService) Delete(ctx context.Context, id uint, actor, requestID string) error {

@@ -1,5 +1,7 @@
 
-export interface DomainRecord {
+import type { GateSnapshotFields } from './gate';
+
+export interface DomainRecord extends GateSnapshotFields {
   id: number;
   code: string;
   name: string;

@@ -52,6 +52,17 @@ func (s *Store[T]) Get(ctx context.Context, id uint) (T, error) {
 	return item, err
 }
 
+// FindByCodes returns every non-deleted record whose code is in the supplied
+// set. Callers that join by 关联编码 use it to avoid an N+1 lookup per row.
+func (s *Store[T]) FindByCodes(ctx context.Context, codes []string) ([]T, error) {
+	items := make([]T, 0)
+	if len(codes) == 0 {
+		return items, nil
+	}
+	err := s.db.WithContext(ctx).Where("code IN ?", codes).Find(&items).Error
+	return items, err
+}
+
 func (s *Store[T]) Create(ctx context.Context, item *T) error {
 	return s.db.WithContext(ctx).Create(item).Error
 }
