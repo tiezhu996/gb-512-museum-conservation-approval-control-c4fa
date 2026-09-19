@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import type { DomainRecord, EntityConfig } from '../types/domain';
-import { formatDate, nextStatus } from '../utils/format';
+import { formatDate, gateVerdictTone, nextStatus } from '../utils/format';
 import { useAuth } from '../hooks/useAuth';
 import StatusBadge from './common/StatusBadge.vue';
 import MetricCard from './common/MetricCard.vue';
@@ -44,8 +44,13 @@ async function createDemo() {
 
 async function confirmTransition() {
   if (!pending.value || !canTransition(pending.value.item)) return;
-  await props.store.transition(props.config.path, pending.value.item, pending.value.status);
-  pending.value = null;
+  try {
+    await props.store.transition(props.config.path, pending.value.item, pending.value.status);
+  } catch {
+    // store.error 已携带后端返回的具体原因（如检测门禁拦截），由页面告警展示。
+  } finally {
+    pending.value = null;
+  }
 }
 </script>
 
@@ -73,6 +78,15 @@ async function confirmTransition() {
         <el-table-column prop="code" label="编码" width="150"/>
         <el-table-column label="名称" min-width="180"><template #default="{ row }"><strong>{{ row.name }}</strong><small>{{ row.facility }}</small></template></el-table-column>
         <el-table-column label="状态" width="140"><template #default="{ row }"><StatusBadge :status="row.status"/></template></el-table-column>
+        <el-table-column v-if="config.path === 'approvals'" label="检测门禁" min-width="230">
+          <template #default="{ row }">
+            <template v-if="row.gateTestCode">
+              <strong>{{ row.gateTestCode }} · v{{ row.gateTestVersion }}</strong>
+              <small :class="`gate-verdict gate-verdict--${gateVerdictTone(row.gateVerdict)}`">{{ row.gateVerdict }}</small>
+            </template>
+            <span v-else class="muted">进入复核后冻结检测快照</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="riskLevel" label="风险" width="90"/>
         <el-table-column prop="owner" label="责任人"/>
         <el-table-column label="指标"><template #default="{ row }">{{ row.metricValue }} {{ row.metricUnit }}</template></el-table-column>

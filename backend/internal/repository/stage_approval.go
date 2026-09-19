@@ -15,6 +15,7 @@ type StageApprovalRepository interface {
 	Create(context.Context, *model.StageApproval) error
 	Update(context.Context, uint, uint, *model.StageApproval) error
 	TransitionWithOpinion(context.Context, uint, uint, *model.StageApproval, *model.ApprovalOpinion) error
+	RecordGateVerdict(context.Context, uint, string) error
 	Delete(context.Context, uint) error
 	CountByStatus(context.Context) (map[string]int64, error)
 }
@@ -80,6 +81,21 @@ func (r *stageApprovalRepository) TransitionWithOpinion(ctx context.Context, id,
 }
 func (r *stageApprovalRepository) Delete(ctx context.Context, id uint) error {
 	return r.store.Delete(ctx, id)
+}
+
+// RecordGateVerdict persists only the gate conclusion of a blocked approval
+// attempt. Status, version and opinion history stay untouched so the record
+// remains in review and optimistic-lock tokens held by clients stay valid.
+func (r *stageApprovalRepository) RecordGateVerdict(ctx context.Context, id uint, verdict string) error {
+	result := r.db.WithContext(ctx).Model(&model.StageApproval{}).Where("id = ?", id).
+		UpdateColumns(map[string]any{"gate_verdict": verdict})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 func (r *stageApprovalRepository) CountByStatus(ctx context.Context) (map[string]int64, error) {
 	return r.store.CountByStatus(ctx)

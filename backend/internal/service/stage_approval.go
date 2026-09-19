@@ -24,11 +24,13 @@ type StageApprovalService interface {
 
 type stageApprovalService struct {
 	repository repository.StageApprovalRepository
+	plans      repository.TreatmentPlanRepository
+	tests      repository.MaterialTestRepository
 	security   SecurityService
 }
 
-func NewStageApprovalService(repo repository.StageApprovalRepository, security SecurityService) StageApprovalService {
-	return &stageApprovalService{repository: repo, security: security}
+func NewStageApprovalService(repo repository.StageApprovalRepository, plans repository.TreatmentPlanRepository, tests repository.MaterialTestRepository, security SecurityService) StageApprovalService {
+	return &stageApprovalService{repository: repo, plans: plans, tests: tests, security: security}
 }
 
 func (s *stageApprovalService) List(ctx context.Context, query dto.PageQuery) (repository.Page[model.StageApproval], error) {
@@ -104,6 +106,32 @@ func (s *stageApprovalService) Transition(ctx context.Context, id uint, input dt
 	if (target == string(constants.ApprovalStateApproved) || target == string(constants.ApprovalStateRejected)) &&
 		role != model.RoleReviewer && role != model.RoleAdmin {
 		return model.StageApproval{}, ErrReviewerRequired
+	}
+	// Gate on entering review: freeze the latest verified material test of the
+	// plan referenced by the related code. On failure nothing is persisted, so
+	// status, version and opinion history stay exactly as they were.
+	if target == string(constants.ApprovalStateReview) {
+		testCode, testVersion, verdict, err := s.freezeTestSnapshot(ctx, current.RelatedCode)
+		if err != nil {
+			return model.StageApproval{}, err
+		}
+		current.GateTestCode = testCode
+		current.GateTestVersion = testVersion
+		current.GateVerdict = verdict
+	}
+	// Gate on approval: the frozen test must still be readable, unversioned and
+	// verified. A blocked attempt keeps the record in review, records only the
+	// gate verdict, and returns the concrete reason to the caller.
+	if target == string(constants.ApprovalStateApproved) {
+		verdict, err := s.verifyFrozenTest(ctx, current)
+		current.GateVerdict = verdict
+		if err != nil {
+			if recordErr := s.repository.RecordGateVerdict(ctx, id, verdict); recordErr != nil {
+				return model.StageApproval{}, fmt.Errorf("record gate verdict: %w", recordErr)
+			}
+			_ = s.security.Audit(ctx, actor, requestID, "gate-blocked", "StageApproval", id, current.Status, current.Status, verdict)
+			return model.StageApproval{}, err
+		}
 	}
 	before := current.Status
 	current.Status = target

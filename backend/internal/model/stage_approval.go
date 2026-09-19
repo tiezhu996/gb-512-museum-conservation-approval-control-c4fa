@@ -7,16 +7,21 @@ import "time"
 // changes naturally span persistence, service and UI layers.
 type StageApproval struct {
 	BaseModel
-	Facility    string            `json:"facility" gorm:"size:120;index"`
-	Owner       string            `json:"owner" gorm:"size:120;index"`
-	Category    string            `json:"category" gorm:"size:80;index"`
-	RiskLevel   string            `json:"riskLevel" gorm:"size:32;index"`
-	MetricValue float64           `json:"metricValue"`
-	MetricUnit  string            `json:"metricUnit" gorm:"size:24"`
-	EffectiveAt time.Time         `json:"effectiveAt"`
-	Evidence    string            `json:"evidence" gorm:"size:2000"`
-	RelatedCode string            `json:"relatedCode" gorm:"size:64;index"`
-	Opinions    []ApprovalOpinion `json:"opinions" gorm:"foreignKey:StageApprovalID;constraint:OnDelete:CASCADE"`
+	Facility    string    `json:"facility" gorm:"size:120;index"`
+	Owner       string    `json:"owner" gorm:"size:120;index"`
+	Category    string    `json:"category" gorm:"size:80;index"`
+	RiskLevel   string    `json:"riskLevel" gorm:"size:32;index"`
+	MetricValue float64   `json:"metricValue"`
+	MetricUnit  string    `json:"metricUnit" gorm:"size:24"`
+	EffectiveAt time.Time `json:"effectiveAt"`
+	Evidence    string    `json:"evidence" gorm:"size:2000"`
+	RelatedCode string    `json:"relatedCode" gorm:"size:64;index"`
+	// Gate snapshot: frozen when the approval enters review. The gate re-reads
+	// the material test at approval time and blocks if it drifted.
+	GateTestCode    string            `json:"gateTestCode" gorm:"size:64;index"`
+	GateTestVersion uint              `json:"gateTestVersion"`
+	GateVerdict     string            `json:"gateVerdict" gorm:"size:300"`
+	Opinions        []ApprovalOpinion `json:"opinions" gorm:"foreignKey:StageApprovalID;constraint:OnDelete:CASCADE"`
 }
 
 func (item *StageApproval) GetBase() *BaseModel { return &item.BaseModel }

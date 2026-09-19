@@ -34,6 +34,7 @@ docker compose down -v --remove-orphans
 - JWT 登录和 viewer/operator/reviewer/admin 四级 RBAC；后端写路由中间件、前端路由守卫和操作按钮权限保持一致。
 - 所有状态变化使用乐观锁并写入不可覆盖的审计日志。
 - 阶段审批必须由 `draft` 进入 `review`，operator 不能批准或驳回；reviewer/admin 的每条意见以独立版本追加，保存操作者和 request ID，审批开始后普通字段不可覆盖。
+- 检测快照门禁：审批进入 `review` 时按关联编码定位处理方案，冻结该方案按更新时间最新的已核验材料检测编码与版本；缺方案或无已核验检测时拒绝且状态与意见不变。批准时重新读取冻结检测，检测被删除、改判或换版都会拦截并保持 `review`，仅记录门禁结论；重复或并发批准由乐观锁保证只完成一次。审批列表与方案页展示冻结检测、版本和门禁结论。
 - `RiskTag` 在文物与方案页共用，`ApprovalTimeline` 在方案与审批页共用，`EmptyState` 统一处理空结果。
 - 请求 ID、结构化日志、全局错误映射和 Redis 分布式限流。
 - 提供脱敏运行配置、当前会话、审计汇总和单实体审计历史接口。
@@ -114,6 +115,7 @@ cd .. && docker compose config --quiet
 |---|---|---|
 | `ArtifactState` | `registered, stable, treatment, closed` | `backend/internal/constants/status.go`、`frontend/src/types/status.ts` |
 | `ApprovalState` | `draft, review, approved, rejected` | `backend/internal/constants/status.go`、`frontend/src/types/status.ts` |
+| `MaterialTestState` | `planned, running, verified, invalid` | `backend/internal/constants/status.go`、`frontend/src/types/status.ts`（`ENTITY_CONFIGS`） |
 
 每个实体自己的完整迁移图同样位于 `backend/internal/constants/status.go`；页面使用的状态列表位于 `frontend/src/types/status.ts`。修改状态时必须同步两处并更新对应服务测试。
 

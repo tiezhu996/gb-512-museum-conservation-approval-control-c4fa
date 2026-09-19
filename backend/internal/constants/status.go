@@ -25,6 +25,17 @@ const (
 
 var AllApprovalState = []string{"draft", "review", "approved", "rejected"}
 
+// MaterialTestState values are referenced by the approval gate, which only
+// accepts tests that are still verified at approval time.
+type MaterialTestState string
+
+const (
+	MaterialTestStatePlanned  MaterialTestState = "planned"
+	MaterialTestStateRunning  MaterialTestState = "running"
+	MaterialTestStateVerified MaterialTestState = "verified"
+	MaterialTestStateInvalid  MaterialTestState = "invalid"
+)
+
 var ArtifactTransitions = map[string]map[string]bool{
 	"registered": {"stable": true, "treatment": true},
 	"stable":     {"treatment": true, "closed": true, "registered": true},

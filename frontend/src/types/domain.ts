@@ -17,6 +17,9 @@ export interface DomainRecord {
   relatedCode: string;
   createdAt: string;
   updatedAt: string;
+  gateTestCode?: string;
+  gateTestVersion?: number;
+  gateVerdict?: string;
   opinions?: ApprovalOpinion[];
 }
 

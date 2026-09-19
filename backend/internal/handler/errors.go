@@ -18,7 +18,9 @@ func handleError(c *gin.Context, err error) {
 	case errors.Is(err, repository.ErrVersionConflict):
 		util.Fail(c, http.StatusConflict, "version_conflict", "record changed; refresh and retry")
 	case errors.Is(err, service.ErrInvalidTransition), errors.Is(err, service.ErrInvalidInput),
-		errors.Is(err, service.ErrApprovalLocked), errors.Is(err, service.ErrReviewerRequired):
+		errors.Is(err, service.ErrApprovalLocked), errors.Is(err, service.ErrReviewerRequired),
+		errors.Is(err, service.ErrGatePlanMissing), errors.Is(err, service.ErrGateTestMissing),
+		errors.Is(err, service.ErrGateSnapshotStale):
 		util.Fail(c, http.StatusUnprocessableEntity, "business_rule", err.Error())
 	default:
 		_ = c.Error(err)

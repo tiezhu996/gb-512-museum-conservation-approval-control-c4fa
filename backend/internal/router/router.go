@@ -35,7 +35,7 @@ func New(cfg config.Config, db *gorm.DB, redisClient *redis.Client, logger *slog
 	artifactService := service.NewArtifactService(artifactRepository, securityService)
 	treatmentPlanService := service.NewTreatmentPlanService(treatmentPlanRepository, securityService)
 	materialTestService := service.NewMaterialTestService(materialTestRepository, securityService)
-	stageApprovalService := service.NewStageApprovalService(stageApprovalRepository, securityService)
+	stageApprovalService := service.NewStageApprovalService(stageApprovalRepository, treatmentPlanRepository, materialTestRepository, securityService)
 	artifactHandler := handler.NewArtifactHandler(artifactService)
 	treatmentPlanHandler := handler.NewTreatmentPlanHandler(treatmentPlanService)
 	materialTestHandler := handler.NewMaterialTestHandler(materialTestService)
